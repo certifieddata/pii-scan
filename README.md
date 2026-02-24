@@ -1,4 +1,4 @@
-# @sdaas/pii-scan
+# @certifieddata/pii-scan
 
 Local PII risk scanner for datasets. Scans CSV and JSON files for likely Personally Identifiable Information patterns using regex heuristics.
 
@@ -16,8 +16,8 @@ Local PII risk scanner for datasets. Scans CSV and JSON files for likely Persona
 ## Quick Start
 
 ```bash
-npx @sdaas/pii-scan ./customers.csv
-npx @sdaas/pii-scan ./users.json
+npx @certifieddata/pii-scan ./customers.csv
+npx @certifieddata/pii-scan ./users.json
 ```
 
 No installation required. Works with Node.js 18+.
@@ -27,9 +27,9 @@ No installation required. Works with Node.js 18+.
 ## Install
 
 ```bash
-npm install @sdaas/pii-scan
+npm install @certifieddata/pii-scan
 # or
-pnpm add @sdaas/pii-scan
+pnpm add @certifieddata/pii-scan
 ```
 
 ---
@@ -57,13 +57,13 @@ Exit codes:
 
 ```bash
 # Scan a CSV
-npx @sdaas/pii-scan ./customers.csv
+npx @certifieddata/pii-scan ./customers.csv
 
 # Scan JSON, get JSON output
-npx @sdaas/pii-scan ./records.json --json
+npx @certifieddata/pii-scan ./records.json --json
 
 # Use in CI (exits non-zero if PII found)
-npx @sdaas/pii-scan ./test-data.csv && echo "Clean"
+npx @certifieddata/pii-scan ./test-data.csv && echo "Clean"
 ```
 
 ### Example Output
@@ -97,7 +97,7 @@ sdaas-pii-scan — local PII risk scanner
   Do not use this dataset in lower environments without synthetic replacement.
 
   Next step: Generate a certified synthetic replacement at
-  https://sdaas.io
+  https://certifieddata.io
 ```
 
 ---
@@ -105,7 +105,7 @@ sdaas-pii-scan — local PII risk scanner
 ## Library API
 
 ```typescript
-import { scanContent, scanColumns } from "@sdaas/pii-scan";
+import { scanContent, scanColumns } from "@certifieddata/pii-scan";
 
 // Scan file content
 const result = scanContent(fileContents, "customers.csv");
@@ -198,7 +198,7 @@ Add to GitHub Actions to block PRs that add PII to test fixtures:
 
 ```yaml
 - name: Scan test data for PII
-  run: npx @sdaas/pii-scan ./tests/fixtures/customers.csv
+  run: npx @certifieddata/pii-scan ./tests/fixtures/customers.csv
   # Exits 2 on HIGH risk, 1 on any finding, 0 if clean
 ```
 
@@ -208,7 +208,7 @@ Add to GitHub Actions to block PRs that add PII to test fixtures:
 
 When this tool flags real PII in your dataset, the next step is to replace it with a certified synthetic equivalent — structurally identical, statistically representative, and cryptographically attested to contain no real personal data.
 
-**[SDAAS.io](https://sdaas.io)** — Generate certified synthetic datasets with Ed25519-signed certificates, independently verifiable by any auditor.
+**[CertifiedData.io](https://certifieddata.io)** — Generate certified synthetic datasets with Ed25519-signed certificates, independently verifiable by any auditor.
 
 ---
 

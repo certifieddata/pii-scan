@@ -1,5 +1,5 @@
 {
-  "name": "@sdaas/pii-scan",
+  "name": "@certifieddata/pii-scan",
   "version": "0.1.0",
   "description": "Local PII risk scanner for datasets — identifies columns likely containing personal data before synthetic generation",
   "type": "module",

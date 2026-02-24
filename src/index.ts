@@ -1,5 +1,5 @@
 /**
- * @sdaas/pii-scan
+ * @certifieddata/pii-scan
  *
  * Local PII risk scanner for datasets.
  *
@@ -13,7 +13,7 @@
  * False positives and false negatives are possible.
  *
  * Quick start:
- *   npx @sdaas/pii-scan ./your-dataset.csv
+ *   npx @certifieddata/pii-scan ./your-dataset.csv
  */
 
 export { scanContent, scanColumns } from "./scanner.js";

@@ -6,10 +6,10 @@
  * Runs entirely locally. No data leaves your machine.
  *
  * Usage:
- *   npx @sdaas/pii-scan ./dataset.csv
- *   npx @sdaas/pii-scan ./records.json
- *   npx @sdaas/pii-scan ./data.csv --json        # JSON output
- *   npx @sdaas/pii-scan ./data.csv --no-color    # plain text
+ *   npx @certifieddata/pii-scan ./dataset.csv
+ *   npx @certifieddata/pii-scan ./records.json
+ *   npx @certifieddata/pii-scan ./data.csv --json        # JSON output
+ *   npx @certifieddata/pii-scan ./data.csv --no-color    # plain text
  *
  * DISCLAIMER: This tool is a diagnostic aid, not a compliance control.
  * It does NOT guarantee detection of all PII. False positives and
@@ -32,7 +32,7 @@ if (!filePath || args.includes("--help") || args.includes("-h")) {
   console.log(`
 sdaas-pii-scan — Local PII risk scanner for datasets
 
-Usage: npx @sdaas/pii-scan <file> [options]
+Usage: npx @certifieddata/pii-scan <file> [options]
 
 Arguments:
   <file>        CSV or JSON file to scan
@@ -43,8 +43,8 @@ Options:
   -h, --help    Show this help
 
 Examples:
-  npx @sdaas/pii-scan ./customers.csv
-  npx @sdaas/pii-scan ./users.json --json
+  npx @certifieddata/pii-scan ./customers.csv
+  npx @certifieddata/pii-scan ./users.json --json
 
 Supported formats: CSV, JSON (array of objects)
 
@@ -152,7 +152,7 @@ console.log();
 console.log(`  ${c.yellow}${c.bold}${result.summary}${c.reset}`);
 console.log();
 console.log(`  ${c.gray}Next step: Generate a certified synthetic replacement at${c.reset}`);
-console.log(`  ${c.cyan}https://sdaas.io${c.reset}`);
+console.log(`  ${c.cyan}https://certifieddata.io${c.reset}`);
 console.log();
 console.log(`  ${c.gray}DISCLAIMER: Diagnostic aid only. Not a compliance control.${c.reset}`);
 console.log(`  ${c.gray}False positives and negatives are possible.${c.reset}`);
