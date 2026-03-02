@@ -37,7 +37,7 @@ pnpm add @certifieddata/pii-scan
 ## CLI Usage
 
 ```
-sdaas-pii-scan <file> [options]
+pii-scan <file> [options]
 
 Arguments:
   <file>        CSV or JSON file to scan
@@ -69,7 +69,7 @@ npx @certifieddata/pii-scan ./test-data.csv && echo "Clean"
 ### Example Output
 
 ```
-sdaas-pii-scan — local PII risk scanner
+pii-scan — local PII risk scanner
 ────────────────────────────────────────────────────────────
   File   : /path/to/customers.csv
   Rows   : 1,000
@@ -214,6 +214,6 @@ When this tool flags real PII in your dataset, the next step is to replace it wi
 
 ## License
 
-MIT — see [LICENSE](../../LICENSE)
+MIT — see [LICENSE](https://github.com/certifieddata/certifieddata-public/blob/main/LICENSE)
 
-Part of the [sdaas-public](https://github.com/Sdaas-io/sdaas-public) open-source toolkit.
+Part of the [certifieddata-public](https://github.com/certifieddata/certifieddata-public) open-source toolkit.
