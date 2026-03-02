@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * sdaas-pii-scan CLI
+ * pii-scan CLI
  *
  * Scans CSV or JSON dataset files for likely PII patterns.
  * Runs entirely locally. No data leaves your machine.
@@ -30,7 +30,7 @@ const noColor = args.includes("--no-color") || !process.stdout.isTTY;
 
 if (!filePath || args.includes("--help") || args.includes("-h")) {
   console.log(`
-sdaas-pii-scan — Local PII risk scanner for datasets
+pii-scan — Local PII risk scanner for datasets
 
 Usage: npx @certifieddata/pii-scan <file> [options]
 
@@ -95,7 +95,7 @@ if (jsonOutput) {
 
 // Human-readable output
 console.log(`
-${c.bold}${c.white}sdaas-pii-scan${c.reset} ${c.gray}— local PII risk scanner${c.reset}
+${c.bold}${c.white}pii-scan${c.reset} ${c.gray}— local PII risk scanner${c.reset}
 ${c.gray}${"─".repeat(60)}${c.reset}
   File   : ${absPath}
   Rows   : ${result.rowsScanned.toLocaleString()}

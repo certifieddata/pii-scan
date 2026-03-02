@@ -4,7 +4,7 @@
   "description": "Local PII risk scanner for datasets — identifies columns likely containing personal data before synthetic generation",
   "type": "module",
   "bin": {
-    "sdaas-pii-scan": "dist/cli.js"
+    "pii-scan": "dist/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,11 +24,11 @@
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0"
   },
-  "keywords": ["sdaas", "pii", "privacy", "scanner", "synthetic-data", "cli"],
+  "keywords": ["certifieddata", "pii", "privacy", "scanner", "synthetic-data", "cli"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Sdaas-io/sdaas-public.git",
+    "url": "https://github.com/certifieddata/certifieddata-public.git",
     "directory": "packages/pii-scan"
   }
 }
