@@ -32,7 +32,24 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check if version already published
+        id: version_check
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "@certifieddata/pii-scan@${PKG_VERSION}" version 2>/dev/null; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish with provenance
+        if: steps.version_check.outputs.already_published == 'false'
         run: pnpm publish --access public --no-git-checks --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip (already published)
+        if: steps.version_check.outputs.already_published == 'true'
+        run: echo "Version already on npm — bump package.json version to publish a new release."
