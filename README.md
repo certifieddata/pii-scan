@@ -91,9 +91,9 @@ pii-scan — local PII risk scanner
 
 ────────────────────────────────────────────────────────────
   Overall risk : [HIGH]
-  Findings     : 3 HIGH  2 total
+  Findings     : 3 (2 HIGH  1 MEDIUM)
 
-  3 potential PII finding(s) across 2 column(s). 3 HIGH risk.
+  3 potential PII finding(s) across 2 column(s). 2 HIGH risk.
   Do not use this dataset in lower environments without synthetic replacement.
 
   Next step: Generate a certified synthetic replacement at
@@ -204,6 +204,59 @@ Add to GitHub Actions to block PRs that add PII to test fixtures:
 
 ---
 
+## How detection works
+
+`scanContent()` reads the file, auto-detects format (CSV or JSON), and passes parsed columns to
+`scanColumns()`. For each column:
+
+1. **Column name check** — the column name is matched against a list of PII-suggestive names (e.g. `email`, `ssn`, `dob`, `patient_id`). This fires even when values are already masked.
+2. **Content scan** — up to 200 rows of content are regex-tested against each pattern.
+3. **Redaction** — matching values in output show only the first 2 and last 2 characters; the middle is masked.
+4. **Risk aggregation** — overall risk is the maximum risk level of any single finding.
+
+---
+
+## Limitations and false positives
+
+- **US-centric**: phone, SSN, ZIP, routing number, and address patterns target US formats only.
+- **Regex-based**: no NLP or ML. Patterns like addresses and ZIPs have high false-positive rates in non-address columns.
+- **Detection only**: this tool does not modify, redact, or rewrite your data.
+- **Sampling**: only the first 200 rows per column are scanned for performance.
+- **9-digit sequences**: the routing number pattern (`\b\d{9}\b`) will match any 9-digit number — treat those findings as advisory in non-financial datasets.
+- **Not a compliance tool**: findings are advisory only. They do not constitute a legal assessment under GDPR, HIPAA, CCPA, or any other regulation.
+
+---
+
+## Privacy and security model
+
+`@certifieddata/pii-scan` has **zero runtime dependencies** and makes **no network calls**.
+
+- Does not import `http`, `https`, `fetch`, or any telemetry SDK
+- Does not phone home, log usage, or report findings anywhere
+- Reads only the file you explicitly pass as an argument
+- Produces output only to stdout/stderr
+
+You can verify this by reading the source directly:
+[`src/patterns.ts`](./src/patterns.ts), [`src/scanner.ts`](./src/scanner.ts), [`src/cli.ts`](./src/cli.ts)
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/certifieddata/certifieddata-public
+cd packages/pii-scan
+pnpm install
+pnpm build
+pnpm test
+pnpm lint
+pnpm typecheck
+```
+
+Node.js 18+ required.
+
+---
+
 ## Replacing PII with Certified Synthetic Data
 
 When this tool flags real PII in your dataset, the next step is to replace it with a certified synthetic equivalent — structurally identical, statistically representative, and cryptographically attested to contain no real personal data.
@@ -214,6 +267,6 @@ When this tool flags real PII in your dataset, the next step is to replace it wi
 
 ## License
 
-MIT — see [LICENSE](https://github.com/certifieddata/certifieddata-public/blob/main/LICENSE)
+MIT — see [LICENSE](./LICENSE)
 
 Part of the [certifieddata-public](https://github.com/certifieddata/certifieddata-public) open-source toolkit.
