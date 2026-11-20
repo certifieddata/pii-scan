@@ -1,0 +1,468 @@
+name: Security Scan
+
+# Generic report-only scan for any language. Copy this file as-is.
+# Secrets: gitleaks CLI (the official action needs a paid license on org repos).
+# Code: Semgrep Community Edition, with no login or token.
+# Dependencies: OSV-Scanner. Repositories with no manifests are a clean skip.
+# Findings are summarized and uploaded. They never fail the job.
+# One job, three scanners: the runner starts once.
+
+on:
+  schedule:
+    - cron: '29 12 * * 4'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/package.json"
+      - "**/*lock*"
+      - "**/requirements*.txt"
+      - "**/pyproject.toml"
+      - "**/poetry.lock"
+      - "**/go.mod"
+      - "**/go.sum"
+      - "**/Cargo.lock"
+      - "**/Gemfile.lock"
+      - ".github/workflows/security-scan.yml"
+
+# Schedule and workflow_dispatch ignore the path filter and scan the tree.
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Uploading the report artifact requires this in addition to contents: read.
+  actions: write
+
+jobs:
+  scan:
+    name: Security scan
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Shallow clone. Full history (fetch-depth: 0) is expensive across many
+      # repos, so every trigger uses `gitleaks dir` on the working tree.
+      # A pull request checkout is the merge result, which already contains
+      # the changed files, so the PR range does not need extra history.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Secrets
+        continue-on-error: true
+        env:
+          SCAN_HEADER: "1"
+          SCANNER: gitleaks
+          SCAN_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set +e
+          set +o pipefail
+          # runner context is not available in job env; RUNNER_TEMP is set on each step.
+          export SECURITY_REPORT_DIR="${RUNNER_TEMP}/security-scan-reports"
+          mkdir -p "$SECURITY_REPORT_DIR"
+          raw="$RUNNER_TEMP/gitleaks.raw.json"
+          log="$RUNNER_TEMP/gitleaks.log"
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          bin="$RUNNER_TEMP/gitleaks"
+          status="ok"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${SCAN_VERSION}/gitleaks_${SCAN_VERSION}_linux_x64.tar.gz"
+          if ! curl -fsSL --connect-timeout 20 --max-time 120 -o "$archive" "$url"; then
+            status="download-failed"
+          elif ! echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c - >/dev/null 2>&1; then
+            status="checksum-failed"
+          elif ! tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks; then
+            status="extract-failed"
+          else
+            chmod 0755 "$bin"
+            cat > "$RUNNER_TEMP/gitleaks.toml" << 'EOF'
+          title = "security-scan"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Skip generated and third-party trees"
+          paths = [
+            '''(^|/)node_modules(/|$)''',
+            '''(^|/)dist(/|$)''',
+            '''(^|/)build(/|$)''',
+            '''(^|/)\.next(/|$)''',
+            '''(^|/)vendor(/|$)''',
+            '''(^|/)attached_assets(/|$)''',
+            '''(^|/)\.git(/|$)''',
+          ]
+          EOF
+            "$bin" dir . \
+              --redact=100 \
+              --no-banner \
+              --no-color \
+              --log-level error \
+              --config "$RUNNER_TEMP/gitleaks.toml" \
+              --exit-code 0 \
+              --report-format json \
+              --report-path "$raw" \
+              >"$log" 2>&1 || true
+            if [ ! -s "$raw" ]; then
+              status="error"
+            fi
+          fi
+          export SCAN_STATUS="$status"
+          python3 - << 'PY' || true
+          import json, os
+
+          status = os.environ.get("SCAN_STATUS", "error")
+          version = os.environ.get("SCAN_VERSION", "")
+          raw_path = os.path.join(os.environ["RUNNER_TEMP"], "gitleaks.raw.json")
+          report_path = os.path.join(os.environ["SECURITY_REPORT_DIR"], "gitleaks.json")
+          root = os.environ.get("GITHUB_WORKSPACE", "").replace("\\", "/").rstrip("/")
+
+          def rel(path):
+              path = str(path or "").replace("\\", "/")
+              if root and (path == root or path.startswith(root + "/")):
+                  return path[len(root) + 1 :]
+              return path
+
+          findings = []
+          if status == "ok":
+              try:
+                  data = json.loads(open(raw_path, encoding="utf-8").read() or "[]")
+              except Exception:
+                  status = "error"
+                  data = []
+              if isinstance(data, dict):
+                  data = data.get("findings") or data.get("results") or []
+              if not isinstance(data, list):
+                  status = "error"
+                  data = []
+              for item in data:
+                  if not isinstance(item, dict):
+                      continue
+                  line = item.get("StartLine")
+                  loc = rel(item.get("File") or item.get("file"))
+                  if line:
+                      loc = f"{loc}:{line}"
+                  findings.append({
+                      "rule_id": item.get("RuleID") or item.get("rule_id") or "",
+                      "file": rel(item.get("File") or item.get("file")),
+                      "start_line": line,
+                      "location": loc,
+                  })
+
+          report = {
+              "scanner": "gitleaks",
+              "version": version,
+              "status": status,
+              "findings": [
+                  {k: item[k] for k in ("rule_id", "file", "start_line")}
+                  for item in findings
+              ],
+          }
+          with open(report_path, "w", encoding="utf-8") as fh:
+              json.dump(report, fh, indent=2)
+              fh.write("\n")
+
+          def cell(value):
+              text = str(value).replace("\n", " ").replace("|", "\\|").replace("`", "'")
+              return f"`{text}`"
+
+          lines = []
+          if os.environ.get("SCAN_HEADER") == "1":
+              lines += ["## Security scan", "", "Report only. Findings do not fail this workflow.", ""]
+          lines += [
+              f"### Secrets (gitleaks {version})",
+              "",
+              f"Status: {cell(status)}",
+              f"Findings: {len(findings)}",
+              "",
+          ]
+          if findings:
+              lines += ["| Rule | Location |", "| --- | --- |"]
+              for item in findings[:100]:
+                  lines.append(f"| {cell(item['rule_id'])} | {cell(item['location'])} |")
+              if len(findings) > 100:
+                  lines += ["", f"{len(findings) - 100} more findings are in the artifact."]
+          else:
+              lines.append("No findings.")
+          lines.append("")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          PY
+          exit 0
+
+      - name: Code
+        continue-on-error: true
+        env:
+          SCANNER: semgrep
+          SCAN_VERSION: "1.186.0"
+          SEMGREP_SEND_METRICS: "off"
+          SEMGREP_ENABLE_VERSION_CHECK: "0"
+        run: |
+          set +e
+          set +o pipefail
+          # runner context is not available in job env; RUNNER_TEMP is set on each step.
+          export SECURITY_REPORT_DIR="${RUNNER_TEMP}/security-scan-reports"
+          mkdir -p "$SECURITY_REPORT_DIR"
+          unset SEMGREP_APP_TOKEN
+          raw="$RUNNER_TEMP/semgrep.raw.json"
+          log="$RUNNER_TEMP/semgrep.log"
+          status="ok"
+          export PATH="${HOME}/.local/bin:${PATH}"
+          if ! python3 -m pip install --user --disable-pip-version-check --break-system-packages --quiet "semgrep==${SCAN_VERSION}" >"$log" 2>&1; then
+            status="install-failed"
+          else
+            semgrep scan \
+              --config p/default \
+              --metrics=off \
+              --oss-only \
+              --disable-version-check \
+              --no-error \
+              --exclude node_modules \
+              --exclude dist \
+              --exclude build \
+              --exclude .next \
+              --exclude vendor \
+              --exclude attached_assets \
+              --exclude .git \
+              --json \
+              --json-output "$raw" \
+              . \
+              >>"$log" 2>&1 || true
+            if [ ! -s "$raw" ]; then
+              status="error"
+            fi
+          fi
+          export SCAN_STATUS="$status"
+          python3 - << 'PY' || true
+          import json, os
+
+          status = os.environ.get("SCAN_STATUS", "error")
+          version = os.environ.get("SCAN_VERSION", "")
+          raw_path = os.path.join(os.environ["RUNNER_TEMP"], "semgrep.raw.json")
+          report_path = os.path.join(os.environ["SECURITY_REPORT_DIR"], "semgrep.json")
+          root = os.environ.get("GITHUB_WORKSPACE", "").replace("\\", "/").rstrip("/")
+
+          def rel(path):
+              path = str(path or "").replace("\\", "/")
+              if root and (path == root or path.startswith(root + "/")):
+                  return path[len(root) + 1 :]
+              return path
+
+          findings = []
+          if status == "ok":
+              try:
+                  data = json.loads(open(raw_path, encoding="utf-8").read() or "{}")
+              except Exception:
+                  status = "error"
+                  data = {}
+              results = data.get("results") if isinstance(data, dict) else None
+              if not isinstance(results, list):
+                  status = "error"
+                  results = []
+              for item in results:
+                  if not isinstance(item, dict):
+                      continue
+                  line = (item.get("start") or {}).get("line")
+                  path = rel(item.get("path"))
+                  loc = f"{path}:{line}" if line else path
+                  findings.append({
+                      "rule_id": item.get("check_id") or "",
+                      "file": path,
+                      "start_line": line,
+                      "location": loc,
+                  })
+
+          report = {
+              "scanner": "semgrep",
+              "version": version,
+              "status": status,
+              "findings": [
+                  {k: item[k] for k in ("rule_id", "file", "start_line")}
+                  for item in findings
+              ],
+          }
+          with open(report_path, "w", encoding="utf-8") as fh:
+              json.dump(report, fh, indent=2)
+              fh.write("\n")
+
+          def cell(value):
+              text = str(value).replace("\n", " ").replace("|", "\\|").replace("`", "'")
+              return f"`{text}`"
+
+          lines = [
+              f"### Code (semgrep {version})",
+              "",
+              f"Status: {cell(status)}",
+              f"Findings: {len(findings)}",
+              "",
+          ]
+          if findings:
+              lines += ["| Rule | Location |", "| --- | --- |"]
+              for item in findings[:100]:
+                  lines.append(f"| {cell(item['rule_id'])} | {cell(item['location'])} |")
+              if len(findings) > 100:
+                  lines += ["", f"{len(findings) - 100} more findings are in the artifact."]
+          else:
+              lines.append("No findings.")
+          lines.append("")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          PY
+          exit 0
+
+      - name: Dependencies
+        continue-on-error: true
+        env:
+          SCANNER: osv-scanner
+          SCAN_VERSION: "2.7.1"
+          OSV_SHA256: "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8"
+        run: |
+          set +e
+          set +o pipefail
+          # runner context is not available in job env; RUNNER_TEMP is set on each step.
+          export SECURITY_REPORT_DIR="${RUNNER_TEMP}/security-scan-reports"
+          mkdir -p "$SECURITY_REPORT_DIR"
+          raw="$RUNNER_TEMP/osv.raw.json"
+          log="$RUNNER_TEMP/osv.log"
+          archive="$RUNNER_TEMP/osv-scanner"
+          status="ok"
+          url="https://github.com/google/osv-scanner/releases/download/v${SCAN_VERSION}/osv-scanner_linux_amd64"
+          if ! curl -fsSL --connect-timeout 20 --max-time 120 -o "$archive" "$url"; then
+            status="download-failed"
+          elif ! echo "${OSV_SHA256}  ${archive}" | sha256sum -c - >/dev/null 2>&1; then
+            status="checksum-failed"
+          else
+            chmod 0755 "$archive"
+            "$archive" scan source -r . \
+              --allow-no-lockfiles \
+              --format json \
+              --output-file "$raw" \
+              --verbosity warn \
+              --x-exclude 'r:(^|/)(node_modules|dist|build|\.next|vendor|attached_assets|\.git)(/|$)' \
+              >"$log" 2>&1 || true
+            if [ ! -s "$raw" ]; then
+              status="error"
+            elif grep -q "No package sources found" "$log"; then
+              status="skipped-no-manifests"
+            fi
+          fi
+          export SCAN_STATUS="$status"
+          python3 - << 'PY' || true
+          import json, os
+
+          status = os.environ.get("SCAN_STATUS", "error")
+          version = os.environ.get("SCAN_VERSION", "")
+          raw_path = os.path.join(os.environ["RUNNER_TEMP"], "osv.raw.json")
+          report_path = os.path.join(os.environ["SECURITY_REPORT_DIR"], "osv-scanner.json")
+          root = os.environ.get("GITHUB_WORKSPACE", "").replace("\\", "/").rstrip("/")
+
+          def rel(path):
+              path = str(path or "").replace("\\", "/")
+              if root and (path == root or path.startswith(root + "/")):
+                  return path[len(root) + 1 :]
+              return path
+
+          findings = []
+          seen = set()
+          if status in ("ok", "skipped-no-manifests"):
+              try:
+                  data = json.loads(open(raw_path, encoding="utf-8").read() or "{}")
+              except Exception:
+                  status = "error"
+                  data = {}
+              results = data.get("results") if isinstance(data, dict) else None
+              if not isinstance(results, list):
+                  status = "error"
+                  results = []
+              for result in results:
+                  if not isinstance(result, dict):
+                      continue
+                  path = rel((result.get("source") or {}).get("path"))
+                  for pkg in result.get("packages") or []:
+                      if not isinstance(pkg, dict):
+                          continue
+                      meta = pkg.get("package") or {}
+                      name = meta.get("name") or ""
+                      ver = meta.get("version") or ""
+                      package = f"{name}@{ver}" if ver else name
+                      groups = pkg.get("groups") or []
+                      advisories = []
+                      if groups:
+                          for group in groups:
+                              ids = (group or {}).get("ids") or []
+                              if ids:
+                                  advisories.append((ids[0], (group or {}).get("max_severity") or ""))
+                      else:
+                          for vuln in pkg.get("vulnerabilities") or []:
+                              if isinstance(vuln, dict) and vuln.get("id"):
+                                  advisories.append((vuln["id"], ""))
+                      for advisory, severity in advisories:
+                          key = (advisory, package, path)
+                          if key in seen:
+                              continue
+                          seen.add(key)
+                          loc = f"{path} ({package})" if package else path
+                          findings.append({
+                              "rule_id": advisory,
+                              "package": package,
+                              "file": path,
+                              "severity": severity,
+                              "location": loc,
+                          })
+              if status == "skipped-no-manifests":
+                  findings = []
+
+          report = {
+              "scanner": "osv-scanner",
+              "version": version,
+              "status": status,
+              "findings": [
+                  {k: item[k] for k in ("rule_id", "package", "file", "severity")}
+                  for item in findings
+              ],
+          }
+          with open(report_path, "w", encoding="utf-8") as fh:
+              json.dump(report, fh, indent=2)
+              fh.write("\n")
+
+          def cell(value):
+              text = str(value).replace("\n", " ").replace("|", "\\|").replace("`", "'")
+              return f"`{text}`"
+
+          lines = [
+              f"### Dependencies (osv-scanner {version})",
+              "",
+              f"Status: {cell(status)}",
+              f"Findings: {len(findings)}",
+              "",
+          ]
+          if status == "skipped-no-manifests":
+              lines.append("No dependency manifests or lockfiles found.")
+          elif findings:
+              lines += ["| Rule | Location |", "| --- | --- |"]
+              for item in findings[:100]:
+                  lines.append(f"| {cell(item['rule_id'])} | {cell(item['location'])} |")
+              if len(findings) > 100:
+                  lines += ["", f"{len(findings) - 100} more findings are in the artifact."]
+          else:
+              lines.append("No findings.")
+          lines.append("")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines) + "\n")
+          PY
+          exit 0
+
+      - name: Upload reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-scan-reports
+          path: ${{ runner.temp }}/security-scan-reports/
+          retention-days: 14
+          if-no-files-found: warn
+          overwrite: true
